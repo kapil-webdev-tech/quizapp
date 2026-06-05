@@ -271,21 +271,124 @@ with check (public.is_admin());
 create table if not exists public.active_recall_sheets (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
+  owner_id uuid,
   subject text not null,
   topic text not null,
   prompt text not null,
-  payload jsonb not null,
+  visibility text not null default 'private' check (visibility in ('private', 'public')),
+  payload jsonb not null default '{"topic":"","questions":[]}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table public.active_recall_sheets
+add column if not exists owner_id uuid;
+
+update public.active_recall_sheets
+set owner_id = coalesce(owner_id, user_id)
+where owner_id is null;
+
+alter table public.active_recall_sheets
+alter column owner_id set not null;
+
+alter table public.active_recall_sheets
+add column if not exists visibility text not null default 'private';
+
+alter table public.active_recall_sheets
+drop constraint if exists active_recall_sheets_visibility_check;
+
+alter table public.active_recall_sheets
+add constraint active_recall_sheets_visibility_check
+check (visibility in ('private', 'public'));
+
+alter table public.active_recall_sheets
+alter column payload set default '{"topic":"","questions":[]}'::jsonb;
+
+create index if not exists active_recall_sheets_owner_id_idx
+on public.active_recall_sheets(owner_id);
+
+create index if not exists active_recall_sheets_visibility_updated_idx
+on public.active_recall_sheets(visibility, updated_at desc);
+
+create table if not exists public.active_recall_cards (
+  id uuid primary key default gen_random_uuid(),
+  sheet_id uuid not null references public.active_recall_sheets(id) on delete cascade,
+  question text not null,
+  answer text not null,
+  order_index integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists active_recall_cards_sheet_order_idx
+on public.active_recall_cards(sheet_id, order_index);
+
+create table if not exists public.user_recall_progress (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  card_id uuid not null references public.active_recall_cards(id) on delete cascade,
+  recall_status text not null default 'forgot' check (recall_status in ('forgot', 'partial', 'mastered')),
+  recalled_points integer not null default 0 check (recalled_points >= 0),
+  total_points integer not null default 1 check (total_points > 0),
+  review_count integer not null default 0 check (review_count >= 0),
+  last_reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(user_id, card_id),
+  check (recalled_points <= total_points)
+);
+
+create index if not exists user_recall_progress_user_idx
+on public.user_recall_progress(user_id, updated_at desc);
+
+create index if not exists user_recall_progress_card_idx
+on public.user_recall_progress(card_id);
+
+insert into public.active_recall_cards (
+  id,
+  sheet_id,
+  question,
+  answer,
+  order_index,
+  created_at,
+  updated_at
+)
+select
+  coalesce((question_item->>'id')::uuid, gen_random_uuid()),
+  sheet.id,
+  question_item->>'question',
+  question_item->>'answer',
+  question_index - 1,
+  sheet.created_at,
+  sheet.updated_at
+from public.active_recall_sheets sheet
+cross join lateral jsonb_array_elements(coalesce(sheet.payload->'questions', '[]'::jsonb))
+with ordinality as legacy_questions(question_item, question_index)
+where not exists (
+  select 1
+  from public.active_recall_cards card
+  where card.sheet_id = sheet.id
+)
+and question_item ? 'question'
+and question_item ? 'answer'
+and nullif(question_item->>'question', '') is not null
+and nullif(question_item->>'answer', '') is not null;
+
 alter table public.active_recall_sheets enable row level security;
+alter table public.active_recall_cards enable row level security;
+alter table public.user_recall_progress enable row level security;
 
 drop policy if exists "Users can read own recall sheets" on public.active_recall_sheets;
 create policy "Users can read own recall sheets"
 on public.active_recall_sheets
 for select
-using (auth.uid() = user_id);
+using (auth.uid() = owner_id or auth.uid() = user_id);
+
+drop policy if exists "Users can read public recall sheets" on public.active_recall_sheets;
+create policy "Users can read public recall sheets"
+on public.active_recall_sheets
+for select
+using (visibility = 'public');
 
 drop policy if exists "Admins can read all recall sheets" on public.active_recall_sheets;
 create policy "Admins can read all recall sheets"
@@ -297,7 +400,7 @@ drop policy if exists "Users can insert own recall sheets" on public.active_reca
 create policy "Users can insert own recall sheets"
 on public.active_recall_sheets
 for insert
-with check (auth.uid() = user_id);
+with check (auth.uid() = owner_id and auth.uid() = user_id);
 
 drop policy if exists "Admins can insert recall sheets" on public.active_recall_sheets;
 create policy "Admins can insert recall sheets"
@@ -309,8 +412,8 @@ drop policy if exists "Users can update own recall sheets" on public.active_reca
 create policy "Users can update own recall sheets"
 on public.active_recall_sheets
 for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using (auth.uid() = owner_id or auth.uid() = user_id)
+with check (auth.uid() = owner_id and auth.uid() = user_id);
 
 drop policy if exists "Admins can update all recall sheets" on public.active_recall_sheets;
 create policy "Admins can update all recall sheets"
@@ -323,13 +426,103 @@ drop policy if exists "Users can delete own recall sheets" on public.active_reca
 create policy "Users can delete own recall sheets"
 on public.active_recall_sheets
 for delete
-using (auth.uid() = user_id);
+using (auth.uid() = owner_id or auth.uid() = user_id);
 
 drop policy if exists "Admins can delete all recall sheets" on public.active_recall_sheets;
 create policy "Admins can delete all recall sheets"
 on public.active_recall_sheets
 for delete
 using (public.is_admin());
+
+drop policy if exists "Users can read recall cards for accessible sheets" on public.active_recall_cards;
+create policy "Users can read recall cards for accessible sheets"
+on public.active_recall_cards
+for select
+using (
+  exists (
+    select 1
+    from public.active_recall_sheets sheet
+    where sheet.id = active_recall_cards.sheet_id
+    and (
+      sheet.visibility = 'public'
+      or sheet.owner_id = auth.uid()
+      or sheet.user_id = auth.uid()
+    )
+  )
+);
+
+drop policy if exists "Users can insert recall cards for own sheets" on public.active_recall_cards;
+create policy "Users can insert recall cards for own sheets"
+on public.active_recall_cards
+for insert
+with check (
+  exists (
+    select 1
+    from public.active_recall_sheets sheet
+    where sheet.id = active_recall_cards.sheet_id
+    and (sheet.owner_id = auth.uid() or sheet.user_id = auth.uid())
+  )
+);
+
+drop policy if exists "Users can update recall cards for own sheets" on public.active_recall_cards;
+create policy "Users can update recall cards for own sheets"
+on public.active_recall_cards
+for update
+using (
+  exists (
+    select 1
+    from public.active_recall_sheets sheet
+    where sheet.id = active_recall_cards.sheet_id
+    and (sheet.owner_id = auth.uid() or sheet.user_id = auth.uid())
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.active_recall_sheets sheet
+    where sheet.id = active_recall_cards.sheet_id
+    and (sheet.owner_id = auth.uid() or sheet.user_id = auth.uid())
+  )
+);
+
+drop policy if exists "Users can delete recall cards for own sheets" on public.active_recall_cards;
+create policy "Users can delete recall cards for own sheets"
+on public.active_recall_cards
+for delete
+using (
+  exists (
+    select 1
+    from public.active_recall_sheets sheet
+    where sheet.id = active_recall_cards.sheet_id
+    and (sheet.owner_id = auth.uid() or sheet.user_id = auth.uid())
+  )
+);
+
+drop policy if exists "Admins can manage all recall cards" on public.active_recall_cards;
+create policy "Admins can manage all recall cards"
+on public.active_recall_cards
+for all
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "Users can read own recall progress" on public.user_recall_progress;
+create policy "Users can read own recall progress"
+on public.user_recall_progress
+for select
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own recall progress" on public.user_recall_progress;
+create policy "Users can insert own recall progress"
+on public.user_recall_progress
+for insert
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own recall progress" on public.user_recall_progress;
+create policy "Users can update own recall progress"
+on public.user_recall_progress
+for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
 drop policy if exists "Users can delete own studio draft" on public.studio_drafts;
 create policy "Users can delete own studio draft"

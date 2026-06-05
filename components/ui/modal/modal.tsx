@@ -39,8 +39,15 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/15 backdrop-blur-md"
       onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          onClose();
+        }
+      }}
+      role="dialog"
+      aria-modal="true"
     >
       <div
         onClick={(event) => event.stopPropagation()}
@@ -56,9 +63,7 @@ export function Modal({
               ) : null}
 
               {subtitle ? (
-                <p className="mt-1 text-sm text-slate-500">
-                  {subtitle}
-                </p>
+                <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
               ) : null}
             </div>
 
@@ -83,9 +88,7 @@ export function Modal({
         </div>
 
         {footer ? (
-          <div className="border-t border-slate-200 px-6 py-4">
-            {footer}
-          </div>
+          <div className="border-t border-slate-200 px-6 py-4">{footer}</div>
         ) : null}
       </div>
     </div>

@@ -215,3 +215,72 @@ button:disabled {
     @apply font-sans;
   }
 }
+
+/* ==========================================
+   Reusable Dot Loader
+   ========================================== */
+
+.dot-loader {
+  width: 60px;
+  aspect-ratio: 2;
+
+  --_g: no-repeat radial-gradient(
+    farthest-side,
+    currentColor 90%,
+    transparent
+  );
+
+  background:
+    var(--_g) 0 50%,
+    var(--_g) 50% 50%,
+    var(--_g) 50% 50%,
+    var(--_g) 100% 50%;
+
+  background-size: 25% 50%;
+
+  animation: dot-loader-animation 1s infinite linear;
+}
+
+.dot-loader-sm {
+  width: 40px;
+}
+
+.dot-loader-md {
+  width: 60px;
+}
+
+.dot-loader-lg {
+  width: 80px;
+}
+
+@keyframes dot-loader-animation {
+  33% {
+    background-position:
+      0 0,
+      50% 100%,
+      50% 100%,
+      100% 0;
+  }
+
+  66% {
+    background-position:
+      50% 0,
+      0 100%,
+      100% 100%,
+      50% 0;
+  }
+
+  100% {
+    background-position:
+      50% 50%,
+      0 50%,
+      100% 50%,
+      50% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-loader {
+    animation: none;
+  }
+}

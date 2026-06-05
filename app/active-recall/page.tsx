@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { ActiveRecallSheetList } from "@/components/active-recall-sheet-list";
+import { ActiveRecallSheetList } from "@/features/active-recall/active-recall-sheet-list";
 
 export default function ActiveRecallSheetsPage() {
   return (

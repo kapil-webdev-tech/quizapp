@@ -5,9 +5,14 @@ import {
   requireSupabaseUserId,
 } from "@/lib/supabase";
 
+export type RecallVisibility = "private" | "public";
+export type RecallStatus = "forgot" | "partial" | "mastered";
+
 export type StoredRecallQuestion = {
+  id: string;
   question: string;
   answer: string;
+  orderIndex?: number;
 };
 
 export type StoredRecallSheet = {
@@ -15,30 +20,178 @@ export type StoredRecallSheet = {
   questions: StoredRecallQuestion[];
 };
 
+export type UserRecallProgress = {
+  id: string;
+  userId: string;
+  cardId: string;
+  recallStatus: RecallStatus;
+  recalledPoints: number;
+  totalPoints: number;
+  reviewCount: number;
+  lastReviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ActiveRecallSheetRecord = {
   id: string;
+  ownerId: string;
   subject: string;
   topic: string;
   prompt: string;
+  visibility: RecallVisibility;
   sheet: StoredRecallSheet;
   createdAt: string;
   updatedAt: string;
 };
 
+type RecallCardRow = {
+  id: string;
+  question: string;
+  answer: string;
+  order_index: number;
+};
+
+type RecallSheetRow = {
+  id: string;
+  owner_id?: string | null;
+  user_id?: string | null;
+  subject: string;
+  topic: string;
+  prompt: string;
+  visibility?: RecallVisibility | null;
+  payload?: unknown;
+  created_at: string;
+  updated_at: string;
+};
+
 function buildRecallSaveErrorMessage(error: PostgrestError) {
   if (error.code === "42P01") {
-    return "The active_recall_sheets table is missing in Supabase. Apply supabase/schema.sql first.";
+    return "The normalized active recall tables are missing in Supabase. Apply supabase/schema.sql first.";
+  }
+
+  if (error.code === "42703") {
+    return "The active recall schema is out of date. Apply supabase/schema.sql to add owner_id, visibility, cards, and progress columns.";
   }
 
   if (error.code === "42501") {
-    return "Supabase blocked recall sheet saving. Check RLS policies for active_recall_sheets.";
+    return "Supabase blocked recall sheet saving. Check RLS policies for active recall tables.";
   }
 
   return error.message;
 }
 
 const requireRecallUserId = () =>
-  requireSupabaseUserId("Sign in to store active recall sheets in the backend.");
+  requireSupabaseUserId(
+    "Sign in to store active recall sheets in the backend.",
+  );
+
+function mapCardRows(cards: RecallCardRow[] | null | undefined) {
+  return (cards ?? [])
+    .slice()
+    .sort((left, right) => left.order_index - right.order_index)
+    .map((card) => ({
+      id: card.id,
+      question: card.question,
+      answer: card.answer,
+      orderIndex: card.order_index,
+    }));
+}
+
+function mapLegacyPayload(payload: unknown) {
+  const sheet = payload as Partial<{
+    topic: unknown;
+    questions: Array<Partial<StoredRecallQuestion>>;
+  }>;
+
+  const questions = Array.isArray(sheet.questions) ? sheet.questions : [];
+
+  if (questions.some((question) => typeof question.id !== "string")) {
+    throw new Error(
+      "This saved sheet still uses legacy JSON cards without permanent IDs. Apply supabase/schema.sql to migrate payload.questions into active_recall_cards before managing cards.",
+    );
+  }
+
+  return {
+    topic: typeof sheet.topic === "string" ? sheet.topic : "",
+    questions: questions.map((question, index) => ({
+      id: question.id as string,
+      question: typeof question.question === "string" ? question.question : "",
+      answer: typeof question.answer === "string" ? question.answer : "",
+      orderIndex: index,
+    })),
+  } satisfies StoredRecallSheet;
+}
+
+function mapRecallSheetRow(
+  row: RecallSheetRow,
+  cardsBySheetId: Record<string, RecallCardRow[]> = {},
+) {
+  const cards = mapCardRows(cardsBySheetId[row.id]);
+  const sheet =
+    cards.length > 0
+      ? {
+          topic: row.topic,
+          questions: cards,
+        }
+      : mapLegacyPayload(row.payload);
+
+  return {
+    id: row.id,
+    ownerId: row.owner_id ?? row.user_id ?? "",
+    subject: row.subject,
+    topic: row.topic,
+    prompt: row.prompt,
+    visibility: row.visibility ?? "private",
+    sheet,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  } satisfies ActiveRecallSheetRecord;
+}
+
+const sheetSelect = `
+  id,
+  owner_id,
+  user_id,
+  subject,
+  topic,
+  prompt,
+  visibility,
+  payload,
+  created_at,
+  updated_at
+`;
+
+async function fetchCardsBySheetId(sheetIds: string[]) {
+  if (sheetIds.length === 0) {
+    return {};
+  }
+
+  const supabase = requireSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("active_recall_cards")
+    .select("id, sheet_id, question, answer, order_index")
+    .in("sheet_id", sheetIds)
+    .order("order_index", { ascending: true });
+
+  if (error) {
+    throw new Error(buildRecallSaveErrorMessage(error));
+  }
+
+  return (data ?? []).reduce<Record<string, RecallCardRow[]>>((acc, row) => {
+    const sheetId = row.sheet_id as string;
+    acc[sheetId] = [
+      ...(acc[sheetId] ?? []),
+      {
+        id: row.id as string,
+        question: row.question as string,
+        answer: row.answer as string,
+        order_index: row.order_index as number,
+      },
+    ];
+    return acc;
+  }, {});
+}
 
 export async function fetchActiveRecallSheetCount() {
   const supabase = getSupabaseBrowserClient();
@@ -50,7 +203,7 @@ export async function fetchActiveRecallSheetCount() {
   const { count, error } = await supabase
     .from("active_recall_sheets")
     .select("id", { count: "exact", head: true })
-    .eq("user_id", userId);
+    .eq("owner_id", userId);
 
   if (error) {
     throw new Error(buildRecallSaveErrorMessage(error));
@@ -59,81 +212,124 @@ export async function fetchActiveRecallSheetCount() {
   return count ?? 0;
 }
 
-function mapRecallSheetRow(row: {
-  id: string;
-  subject: string;
-  topic: string;
-  prompt: string;
-  payload: unknown;
-  created_at: string;
-  updated_at: string;
-}) {
-  return {
-    id: row.id,
-    subject: row.subject,
-    topic: row.topic,
-    prompt: row.prompt,
-    sheet: row.payload as StoredRecallSheet,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  } satisfies ActiveRecallSheetRecord;
-}
-
 export async function fetchActiveRecallSheets() {
   const supabase = requireSupabaseBrowserClient();
 
   const userId = await requireRecallUserId();
   const { data, error } = await supabase
     .from("active_recall_sheets")
-    .select("id, subject, topic, prompt, payload, created_at, updated_at")
-    .eq("user_id", userId)
+    .select(sheetSelect)
+    .eq("owner_id", userId)
     .order("updated_at", { ascending: false });
 
   if (error) {
     throw new Error(buildRecallSaveErrorMessage(error));
   }
 
-  return (data ?? []).map(mapRecallSheetRow);
+  const rows = (data ?? []) as RecallSheetRow[];
+  const cardsBySheetId = await fetchCardsBySheetId(rows.map((row) => row.id));
+
+  return rows.map((row) => mapRecallSheetRow(row, cardsBySheetId));
+}
+
+export async function fetchPublicActiveRecallSheets() {
+  const supabase = requireSupabaseBrowserClient();
+
+  const { data, error } = await supabase
+    .from("active_recall_sheets")
+    .select(sheetSelect)
+    .eq("visibility", "public")
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    throw new Error(buildRecallSaveErrorMessage(error));
+  }
+
+  const rows = (data ?? []) as RecallSheetRow[];
+  const cardsBySheetId = await fetchCardsBySheetId(rows.map((row) => row.id));
+
+  return rows.map((row) => mapRecallSheetRow(row, cardsBySheetId));
 }
 
 export async function fetchActiveRecallSheet(id: string) {
   const supabase = requireSupabaseBrowserClient();
 
-  const userId = await requireRecallUserId();
   const { data, error } = await supabase
     .from("active_recall_sheets")
-    .select("id, subject, topic, prompt, payload, created_at, updated_at")
+    .select(sheetSelect)
     .eq("id", id)
-    .eq("user_id", userId)
     .maybeSingle();
 
   if (error) {
     throw new Error(buildRecallSaveErrorMessage(error));
   }
 
-  return data ? mapRecallSheetRow(data) : null;
+  if (!data) {
+    return null;
+  }
+
+  const row = data as RecallSheetRow;
+  const cardsBySheetId = await fetchCardsBySheetId([row.id]);
+
+  return mapRecallSheetRow(row, cardsBySheetId);
+}
+
+function toPayload(sheet: StoredRecallSheet) {
+  return {
+    topic: sheet.topic,
+    questions: sheet.questions.map((question, index) => ({
+      id: question.id,
+      question: question.question,
+      answer: question.answer,
+      orderIndex: question.orderIndex ?? index,
+    })),
+  };
 }
 
 export async function saveActiveRecallSheet(input: {
   subject: string;
   topic: string;
   prompt: string;
+  visibility?: RecallVisibility;
   sheet: StoredRecallSheet;
 }) {
   const supabase = requireSupabaseBrowserClient();
 
   const userId = await requireRecallUserId();
-  const { error } = await supabase.from("active_recall_sheets").insert({
-    user_id: userId,
-    subject: input.subject,
-    topic: input.topic,
-    prompt: input.prompt,
-    payload: input.sheet,
-    updated_at: new Date().toISOString(),
-  });
+  const payload = toPayload(input.sheet);
+  const { data, error } = await supabase
+    .from("active_recall_sheets")
+    .insert({
+      user_id: userId,
+      owner_id: userId,
+      subject: input.subject,
+      topic: input.topic,
+      prompt: input.prompt,
+      visibility: input.visibility ?? "private",
+      payload,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
 
   if (error) {
     throw new Error(buildRecallSaveErrorMessage(error));
+  }
+
+  const { error: cardError } = await supabase
+    .from("active_recall_cards")
+    .insert(
+      input.sheet.questions.map((question, index) => ({
+        id: question.id,
+        sheet_id: data.id,
+        question: question.question,
+        answer: question.answer,
+        order_index: question.orderIndex ?? index,
+      })),
+    );
+
+  if (cardError) {
+    throw new Error(buildRecallSaveErrorMessage(cardError));
   }
 }
 
@@ -143,8 +339,78 @@ export async function updateActiveRecallSheet(
     subject: string;
     topic: string;
     prompt: string;
+    visibility?: RecallVisibility;
     sheet: StoredRecallSheet;
   },
+) {
+  const supabase = requireSupabaseBrowserClient();
+
+  const userId = await requireRecallUserId();
+  const payload = toPayload(input.sheet);
+  const { error } = await supabase
+    .from("active_recall_sheets")
+    .update({
+      subject: input.subject,
+      topic: input.topic,
+      prompt: input.prompt,
+      visibility: input.visibility,
+      payload,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("owner_id", userId);
+
+  if (error) {
+    throw new Error(buildRecallSaveErrorMessage(error));
+  }
+
+  const nextCardIds = input.sheet.questions.map((question) => question.id);
+  const { data: existingCards, error: existingError } = await supabase
+    .from("active_recall_cards")
+    .select("id")
+    .eq("sheet_id", id);
+
+  if (existingError) {
+    throw new Error(buildRecallSaveErrorMessage(existingError));
+  }
+
+  const staleCardIds = (existingCards ?? [])
+    .map((card) => card.id as string)
+    .filter((cardId) => !nextCardIds.includes(cardId));
+
+  if (staleCardIds.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("active_recall_cards")
+      .delete()
+      .eq("sheet_id", id)
+      .in("id", staleCardIds);
+
+    if (deleteError) {
+      throw new Error(buildRecallSaveErrorMessage(deleteError));
+    }
+  }
+
+  const { error: upsertError } = await supabase
+    .from("active_recall_cards")
+    .upsert(
+      input.sheet.questions.map((question, index) => ({
+        id: question.id,
+        sheet_id: id,
+        question: question.question,
+        answer: question.answer,
+        order_index: question.orderIndex ?? index,
+        updated_at: new Date().toISOString(),
+      })),
+    );
+
+  if (upsertError) {
+    throw new Error(buildRecallSaveErrorMessage(upsertError));
+  }
+}
+
+export async function updateActiveRecallSheetVisibility(
+  id: string,
+  visibility: RecallVisibility,
 ) {
   const supabase = requireSupabaseBrowserClient();
 
@@ -152,14 +418,11 @@ export async function updateActiveRecallSheet(
   const { error } = await supabase
     .from("active_recall_sheets")
     .update({
-      subject: input.subject,
-      topic: input.topic,
-      prompt: input.prompt,
-      payload: input.sheet,
+      visibility,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .eq("user_id", userId);
+    .eq("owner_id", userId);
 
   if (error) {
     throw new Error(buildRecallSaveErrorMessage(error));
@@ -174,7 +437,107 @@ export async function deleteActiveRecallSheet(id: string) {
     .from("active_recall_sheets")
     .delete()
     .eq("id", id)
-    .eq("user_id", userId);
+    .eq("owner_id", userId);
+
+  if (error) {
+    throw new Error(buildRecallSaveErrorMessage(error));
+  }
+}
+
+export async function fetchUserRecallProgress(cardIds: string[]) {
+  const supabase = requireSupabaseBrowserClient();
+  if (cardIds.length === 0) {
+    return [];
+  }
+
+  const userId = await requireRecallUserId();
+  const { data, error } = await supabase
+    .from("user_recall_progress")
+    .select(
+      "id, user_id, card_id, recall_status, recalled_points, total_points, review_count, last_reviewed_at, created_at, updated_at",
+    )
+    .eq("user_id", userId)
+    .in("card_id", cardIds);
+
+  if (error) {
+    throw new Error(buildRecallSaveErrorMessage(error));
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    userId: row.user_id as string,
+    cardId: row.card_id as string,
+    recallStatus: row.recall_status as RecallStatus,
+    recalledPoints: row.recalled_points as number,
+    totalPoints: row.total_points as number,
+    reviewCount: row.review_count as number,
+    lastReviewedAt: row.last_reviewed_at as string | null,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  })) satisfies UserRecallProgress[];
+}
+
+export async function upsertUserRecallProgress(input: {
+  cardId: string;
+  recallStatus: RecallStatus;
+  recalledPoints: number;
+  totalPoints: number;
+}) {
+  const supabase = requireSupabaseBrowserClient();
+
+  const userId = await requireRecallUserId();
+  const now = new Date().toISOString();
+  const { data: existing, error: existingError } = await supabase
+    .from("user_recall_progress")
+    .select("id, review_count")
+    .eq("user_id", userId)
+    .eq("card_id", input.cardId)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(buildRecallSaveErrorMessage(existingError));
+  }
+
+  const progressPayload = {
+    user_id: userId,
+    card_id: input.cardId,
+    recall_status: input.recallStatus,
+    recalled_points: input.recalledPoints,
+    total_points: input.totalPoints,
+    review_count: ((existing?.review_count as number | undefined) ?? 0) + 1,
+    last_reviewed_at: now,
+    updated_at: now,
+  };
+
+  const { error } = await supabase.from("user_recall_progress").upsert(
+    existing?.id
+      ? {
+          id: existing.id as string,
+          ...progressPayload,
+        }
+      : progressPayload,
+    {
+      onConflict: "user_id,card_id",
+    },
+  );
+
+  if (error) {
+    throw new Error(buildRecallSaveErrorMessage(error));
+  }
+}
+
+// to delete a progress of card
+
+export async function deleteUserRecallProgress(cardId: string) {
+  const supabase = requireSupabaseBrowserClient();
+
+  const userId = await requireRecallUserId();
+
+  const { error } = await supabase
+    .from("user_recall_progress")
+    .delete()
+    .eq("user_id", userId)
+    .eq("card_id", cardId);
 
   if (error) {
     throw new Error(buildRecallSaveErrorMessage(error));
