@@ -27,7 +27,8 @@ import {
   getTopicsBySubject,
 } from "@/lib/syllabus/topics";
 import { getSyllabusDebugData } from "@/lib/syllabus/explorer";
-import { getTopicRelations } from "@/lib/syllabus/mappings";
+import { getTopicRelations, getTopicsForSubject } from "@/lib/syllabus/mappings";
+import { RECALL_PROFILES } from "@/lib/active-recall/recall-profiles";
 
 type SyllabusItem = {
   id: string;
@@ -191,11 +192,21 @@ export function ActiveRecallGenerator() {
       }
 
       setQuestionCount(nextCount);
-
-      setGeneratedPrompt(
-        generateRecallPrompt(nextSubject, nextTopic, nextCount),
+      const selectedProfile = RECALL_PROFILES.find(
+        (p) => p.id === recallProfile,
       );
 
+      setGeneratedPrompt(
+        generateRecallPrompt(
+          nextSubject,
+          nextTopic,
+          isCustomMicroTopic ? microTopic : (selectedSubtopic?.name_en ?? ""),
+          nextCount,
+          [selectedProfile?.prompt ?? "", customInstruction.trim()]
+            .filter(Boolean)
+            .join("\n\n"),
+        ),
+      );
       setError(null);
 
       setStatus(`Prompt generated for exactly ${nextCount} recall cards.`);
@@ -508,21 +519,25 @@ export function ActiveRecallGenerator() {
       return;
     }
 
-    const data = await getTopicsBySubject(subject.id);
+    const data = await getTopicsForSubject(subject.id);
 
     setTopics(data as SyllabusItem[]);
   }
 
   async function handleTopicSelect(topicId: string) {
     const topic = topics.find((t) => t.id === topicId) ?? null;
+
     setSheetTitle(topic?.name_en ?? "");
+
     setSelection((current) => ({
       ...current,
       topic,
       subtopic: null,
     }));
+
     setMicroTopic("");
     setIsCustomMicroTopic(false);
+
     if (!topic) {
       setSubtopics([]);
       return;
@@ -530,7 +545,19 @@ export function ActiveRecallGenerator() {
 
     const relations = await getTopicRelations(topic.id);
 
-    setSubtopics(relations.map((x: any) => x.topics));
+    setSubtopics(
+      relations.map((relation) => {
+        const childTopic = Array.isArray(relation.topics)
+          ? relation.topics[0]
+          : relation.topics;
+
+        return {
+          id: childTopic.id,
+          name_en: childTopic.name_en,
+          name_hi: childTopic.name_hi,
+        };
+      }),
+    );
   }
 
   function handleSubtopicSelect(subtopicId: string) {
