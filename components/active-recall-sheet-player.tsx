@@ -18,6 +18,7 @@ import {
 import { normalizeRecallText } from "@/lib/active-recall/utils";
 import { useSupabaseSession } from "@/lib/supabase";
 import { Button } from "./ui/button";
+import { cn } from "@/lib/cn";
 import { toast } from "sonner";
 import { RecallCardTracker } from "./active-recall/recall-card/recall-card-tracker";
 import RecallCardHeader from "./active-recall/recall-card/recall-card-header";
@@ -118,10 +119,14 @@ function SavedRecallCard({
     } | null,
   ) => void;
 }) {
-  const questionWrapClass =
-    question.question.length <= 90 ? "" : "max-h-[320px] overflow-auto pr-1";
-  const answerWrapClass =
-    question.answer.length <= 90 ? "" : "max-h-[320px] overflow-auto pr-1";
+  const questionWrapClass = cn(
+    "relative transition-all duration-300",
+    question.question.length > 250 && "max-h-[500px] overflow-y-auto pr-2 custom-scrollbar"
+  );
+  const answerWrapClass = cn(
+    "relative transition-all duration-300",
+    question.answer.length > 250 && "max-h-[500px] overflow-y-auto pr-2 custom-scrollbar"
+  );
   const accentColor = getRecallStatusAccent(progress?.recallStatus);
   if (isEditing) {
     return (
@@ -139,7 +144,7 @@ function SavedRecallCard({
   }
 
   return (
-    <div className="group mb-4 break-inside-avoid rounded-[28px] [perspective:1600px] print:mb-3">
+    <div className="group mb-5 break-inside-avoid rounded-[32px] [perspective:2000px] print:mb-3">
       <div
         role="button"
         tabIndex={0}
@@ -151,67 +156,75 @@ function SavedRecallCard({
         }}
         className="block w-full text-left"
       >
-        <div className="grid rounded-[28px] [transform-style:preserve-3d]">
+        <div className="grid rounded-[32px] [transform-style:preserve-3d]">
           {/* Front of card */}
           <div
-            className={`relative col-start-1 row-start-1 rounded-[28px] border border-[#ece6d9] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(249,246,239,0.94))] p-5 shadow-[0_16px_44px_rgba(15,23,42,0.08)] [backface-visibility:hidden] transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] print:hidden sm:p-6 ${
+            className={`relative col-start-1 row-start-1 rounded-[32px] border border-white/40 bg-white/60 p-5 shadow-[0_32px_64px_-16px_rgba(15,23,42,0.12)] backdrop-blur-2xl [backface-visibility:hidden] transition-all duration-700 ease-[cubic-bezier(0.34,1.56,0.64,1)] print:hidden sm:p-6 ${
               isRevealed
-                ? "pointer-events-none opacity-0 [transform:rotateY(-180deg)_scale(0.985)]"
-                : "opacity-100 [transform:rotateY(0deg)_scale(1)]"
+                ? "pointer-events-none opacity-0 [transform:rotateY(-180deg)_scale(0.95)]"
+                : "opacity-100 [transform:rotateY(0deg)_scale(1)] group-hover:shadow-[0_48px_80px_-20px_rgba(15,23,42,0.18)] group-hover:[transform:translateY(-4px)]"
             }`}
           >
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.5),transparent)] rounded-[32px] pointer-events-none" />
             <div
-              className={`absolute left-0 top-6 bottom-6 w-2 rounded-r-full ${accentColor}`}
+              className={`absolute left-0 top-10 bottom-10 w-1 rounded-r-full transition-all duration-500 shadow-[0_0_12px_rgba(0,0,0,0.05)] ${accentColor}`}
             />
-            <div className="flex flex-col justify-start gap-4">
+            <div className="relative flex flex-col justify-start gap-5 sm:gap-6">
               <RecallCardHeader
                 mode={mode}
                 side="question"
                 index={index}
-                badgeClassName="bg-[#17153a]"
-                labelClassName="bg-slate-100 text-slate-500"
+                badgeClassName="bg-slate-900 shadow-xl shadow-slate-900/10"
+                labelClassName="bg-white/50 text-slate-500 border border-black/[0.03] backdrop-blur-md"
                 isSaving={isSaving}
                 onStartEdit={onStartEdit}
                 onDelete={onDelete}
               />
               <div className={questionWrapClass}>
-                <p className="break-words whitespace-pre-wrap text-base font-semibold leading-7 text-slate-950 sm:text-lg">
+                <p className="break-words whitespace-pre-wrap text-lg font-extrabold leading-relaxed text-slate-950 tracking-tight sm:text-2xl">
                   {question.question}
                 </p>
               </div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-                Click to reveal answer
-              </p>
+              <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400/60 sm:tracking-[0.3em]">
+                <span className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+                <span className="shrink-0">Tap to reveal</span>
+                <span className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+              </div>
             </div>
           </div>
           {/* Back of card */}
           <div
-            className={`col-start-1 row-start-1 rounded-[28px] border border-[#d9eadf] bg-[linear-gradient(180deg,rgba(245,251,247,0.98),rgba(236,247,241,0.95))] p-5 shadow-[0_18px_46px_rgba(31,58,47,0.1)] [backface-visibility:hidden] transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] print:hidden sm:p-6 ${
+            className={`col-start-1 row-start-1 rounded-[32px] border border-white/60 bg-emerald-50/50 p-5 shadow-[0_40px_80px_-20px_rgba(16,185,129,0.15)] backdrop-blur-3xl [backface-visibility:hidden] transition-all duration-700 ease-[cubic-bezier(0.34,1.56,0.64,1)] print:hidden sm:p-6 ${
               isRevealed
                 ? "opacity-100 [transform:rotateY(0deg)_scale(1)]"
-                : "pointer-events-none opacity-0 [transform:rotateY(180deg)_scale(0.985)]"
+                : "pointer-events-none opacity-0 [transform:rotateY(180deg)_scale(0.95)]"
             }`}
           >
-            <div className="flex flex-col justify-start gap-4">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.6),transparent)] rounded-[32px] pointer-events-none" />
+            <div className="relative flex flex-col justify-start gap-5 sm:gap-6">
               <RecallCardHeader
                 mode={mode}
                 side="answer"
                 index={index}
-                badgeClassName="bg-emerald-900"
-                labelClassName="bg-emerald-100 text-emerald-800"
+                badgeClassName="bg-emerald-900 shadow-xl shadow-emerald-900/20"
+                labelClassName="bg-emerald-100/60 text-emerald-800 border border-emerald-200/50 backdrop-blur-md"
                 isSaving={isSaving}
                 onStartEdit={onStartEdit}
                 onDelete={onDelete}
               />
 
               <div className={answerWrapClass}>
-                <p className="break-words whitespace-pre-wrap text-base font-semibold leading-7 text-slate-950 sm:text-lg">
+                <p className="break-words whitespace-pre-wrap text-lg font-extrabold leading-relaxed text-slate-950 tracking-tight sm:text-2xl">
                   {question.answer}
                 </p>
               </div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700/70">
-                Click to flip back
-              </p>
+
+              <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700/50 sm:tracking-[0.3em]">
+                <span className="h-px flex-1 bg-gradient-to-r from-transparent via-emerald-200/50 to-transparent" />
+                <span className="shrink-0">Tap to flip</span>
+                <span className="h-px flex-1 bg-gradient-to-r from-transparent via-emerald-200/50 to-transparent" />
+              </div>
+
               <RecallCardTracker
                 progress={progress}
                 isSaving={isSaving}
@@ -705,16 +718,16 @@ export function ActiveRecallSheetPlayer({
           <>
             <Link
               href="/active-recall"
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-stone-50"
+              className="rounded-full border border-black/10 bg-white/80 backdrop-blur-md px-4 py-2 text-sm font-bold text-slate-800 transition-all hover:bg-white hover:shadow-lg"
             >
-              ← Back to sheets
+              ← Back
             </Link>
 
-            <div className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-950">
+            <div className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 text-sm font-bold text-emerald-700 backdrop-blur-md">
               {revealedCount} / {questions.length} Revealed
             </div>
 
-            <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-700">
+            <div className="hidden sm:block rounded-full bg-white/80 border border-black/5 px-4 py-2 text-sm font-bold text-slate-700 backdrop-blur-md">
               {record.topic}
             </div>
           </>
@@ -726,90 +739,104 @@ export function ActiveRecallSheetPlayer({
               variant="secondary"
               size="sm"
               onClick={handleRevealAll}
-              className="gap-1.5"
+              className="rounded-full font-bold shadow-sm whitespace-nowrap px-3 sm:px-4"
             >
               Show All
             </Button>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={handleHideAll}
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-stone-50"
+              className="rounded-full font-bold bg-white/80 backdrop-blur-sm whitespace-nowrap px-3 sm:px-4"
             >
               Hide All
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={handleShuffle}
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-stone-50"
+              className="rounded-full font-bold bg-white/80 backdrop-blur-sm whitespace-nowrap px-3 sm:px-4"
             >
               Shuffle
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={handlePrint}
-              className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-stone-50"
+              className="rounded-full font-bold bg-white/80 backdrop-blur-sm whitespace-nowrap px-3 sm:px-4"
             >
               Print
-            </button>
+            </Button>
 
             {canManageSheet && (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => void handleToggleVisibility()}
                 disabled={isSaving}
-                className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full font-bold border-emerald-200 bg-emerald-50 text-emerald-800 transition hover:bg-emerald-100 whitespace-nowrap px-3 sm:px-4"
               >
                 {record.visibility === "public"
                   ? "Make Private"
-                  : "Publish Public"}
-              </button>
+                  : "Publish"}
+              </Button>
             )}
 
             {canManageSheet && (
-              <button
+              <Button
                 type="button"
-                // onClick={() => void handleDeleteSheet()}
+                variant="danger"
+                size="sm"
                 onClick={() => setDeleteSheetOpen(true)}
                 disabled={isSaving}
-                className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full font-bold whitespace-nowrap px-3 sm:px-4"
               >
-                {isSaving ? "Saving..." : "Delete Sheet"}
-              </button>
+                Delete
+              </Button>
             )}
           </>
         }
       />
-      <div className="mx-auto w-full max-w-7xl px-0 py-6 sm:py-8 print:max-w-none print:px-0 print:py-0">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:py-8 print:max-w-none print:px-0 print:py-0">
         {status ? (
-          <p className="mb-5 rounded-[18px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 print:hidden">
+          <p className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-900 shadow-sm animate-in fade-in slide-in-from-top-2 print:hidden">
             {status}
           </p>
         ) : null}
         {error ? (
-          <p className="mb-5 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 print:hidden">
+          <p className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800 shadow-sm animate-in fade-in slide-in-from-top-2 print:hidden">
             {error}
           </p>
         ) : null}
 
-        <div className="mb-6 rounded-[24px] border border-black/10 bg-white/90 px-5 py-5 shadow-[0_16px_36px_rgba(15,23,42,0.06)] print:mb-4 print:break-inside-avoid print:rounded-[18px] print:border print:px-4 print:py-4 print:shadow-none">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-full bg-amber-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-950">
-              {record.subject}
-            </span>
-            <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
-              {normalizeQuestionCountLabel(questions.length)}
-            </span>
+        <div className="relative mb-8 overflow-hidden rounded-[32px] border border-black/5 bg-white p-6 shadow-[0_32px_64px_-16px_rgba(15,23,42,0.08)] print:mb-4 print:break-inside-avoid print:rounded-[18px] print:border print:px-4 print:py-4 print:shadow-none sm:p-8">
+          <div className="absolute top-0 right-0 -mr-20 -mt-20 h-64 w-64 rounded-full bg-amber-500/5 blur-3xl" />
+          <div className="absolute bottom-0 left-0 -ml-20 -mb-20 h-64 w-64 rounded-full bg-blue-500/5 blur-3xl" />
+          
+          <div className="relative">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">
+                {record.subject}
+              </span>
+              <span className="rounded-full bg-slate-100/80 border border-black/5 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-600">
+                {normalizeQuestionCountLabel(questions.length)}
+              </span>
+            </div>
+            <h1 className="mt-6 text-4xl font-extrabold text-slate-950 tracking-tight sm:text-5xl print:text-2xl">
+              {record.topic}
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-500 print:hidden">
+              Master your knowledge with active recall. Owners can manage cards, 
+              while everyone can track memory progress per card.
+            </p>
           </div>
-          <h1 className="mt-4 text-3xl font-semibold text-slate-950 print:text-2xl">
-            {record.topic}
-          </h1>
-          <p className="mt-2 text-sm leading-7 text-slate-600 print:hidden">
-            Attempt the saved recall sheet here. Signed-in users can track
-            memory state per card; owners can manage cards from manage mode.
-          </p>
         </div>
 
         <div className="columns-1 gap-4 md:columns-2 xl:columns-3 print:columns-2">
@@ -841,16 +868,16 @@ export function ActiveRecallSheetPlayer({
           ))}
         </div>
       </div>
-      <ConfirmationModal
-        isOpen={deleteSheetOpen}
-        onClose={() => setDeleteSheetOpen(false)}
-        onConfirm={() => void handleDeleteSheet()}
-        title="Delete Recall Sheet?"
-        description="This will permanently delete this sheet and all its cards. This action cannot be undone."
-        confirmLabel="Delete Sheet"
-        cancelLabel="Keep Sheet"
-        isLoading={isSaving}
-      />
+        <ConfirmationModal
+          isOpen={deleteSheetOpen}
+          onClose={() => setDeleteSheetOpen(false)}
+          onConfirm={() => void handleDeleteSheet()}
+          title="Delete Recall Sheet?"
+          description="This will permanently delete this sheet and all its cards. This action cannot be undone."
+          confirmLabel="Delete Sheet"
+          cancelLabel="Keep Sheet"
+          isLoading={isSaving}
+        />
       <ConfirmationModal
         isOpen={Boolean(deleteCardId)}
         onClose={() => setDeleteCardId(null)}

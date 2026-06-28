@@ -2,14 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import {
-  fetchActiveRecallSheetCount,
-  saveActiveRecallSheet,
-} from "@/lib/active-recall-store";
-import type {
-  GenerationMode,
-  RecallSheet,
-} from "@/lib/active-recall/types";
+import { saveActiveRecallSheet } from "@/lib/active-recall-store";
+import type { GenerationMode, RecallSheet } from "@/lib/active-recall/types";
 import {
   cleanRecallSheetForPreview,
   createEmptyRecallCard,
@@ -27,6 +21,25 @@ import { ManualSetupSection } from "./manual-setup-section";
 import { RecallEditor } from "./recall-editor";
 import { RecallPreviewCard } from "./recall-preview-card";
 import { RecallStats } from "./recall-stats";
+import { getSubjects } from "@/lib/syllabus/subjects";
+import {
+  createOrGetMicroTopic,
+  getTopicsBySubject,
+} from "@/lib/syllabus/topics";
+import { getSyllabusDebugData } from "@/lib/syllabus/explorer";
+import { getTopicRelations } from "@/lib/syllabus/mappings";
+
+type SyllabusItem = {
+  id: string;
+  name_en: string;
+  name_hi?: string | null;
+};
+
+type RecallSelection = {
+  subject: SyllabusItem | null;
+  topic: SyllabusItem | null;
+  subtopic: SyllabusItem | null;
+};
 
 function normalizeCount(value: number) {
   if (!Number.isFinite(value)) {
@@ -40,9 +53,20 @@ export function ActiveRecallGenerator() {
   const { session, loaded: sessionLoaded } = useSupabaseSession();
   const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("ai");
-  const [subject, setSubject] = useState("");
-  const [topic, setTopic] = useState("");
+  const [subjects, setSubjects] = useState<SyllabusItem[]>([]);
+  const [topics, setTopics] = useState<SyllabusItem[]>([]);
+  const [subtopics, setSubtopics] = useState<SyllabusItem[]>([]);
+  const [selection, setSelection] = useState<RecallSelection>({
+    subject: null,
+    topic: null,
+    subtopic: null,
+  });
+  const [microTopic, setMicroTopic] = useState("");
+  const [isCustomMicroTopic, setIsCustomMicroTopic] = useState(false);
   const [questionCount, setQuestionCount] = useState(10);
+  const [recallProfile, setRecallProfile] = useState("general");
+
+  const [customInstruction, setCustomInstruction] = useState("");
   const [generatedPrompt, setGeneratedPrompt] = useState("");
   const [jsonInput, setJsonInput] = useState("");
   const [editorSheet, setEditorSheet] = useState<RecallSheet | null>(null);
@@ -56,41 +80,54 @@ export function ActiveRecallGenerator() {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const [publishedCount, setPublishedCount] = useState(0);
   const [isPublishing, setIsPublishing] = useState(false);
-
+  const [sheetTitle, setSheetTitle] = useState("");
   const revealedCount = previewSheet
     ? previewSheet.questions.filter((question) => revealedCards[question.id])
         .length
     : 0;
 
+  // useEffect(() => {
+  //   if (!sessionLoaded) {
+  //     return;
+  //   }
+
+  //   let active = true;
+
+  //   void Promise.resolve(session ? fetchActiveRecallSheetCount() : 0)
+  //     .then((count) => {
+  //       if (active) {
+  //         setPublishedCount(count);
+  //       }
+  //     })
+  //     .catch((countError) => {
+  //       if (!active) {
+  //         return;
+  //       }
+
+  //       setError(
+  //         countError instanceof Error
+  //           ? countError.message
+  //           : "Unable to load published recall sheets.",
+  //       );
+  //     });
+
+  //   return () => {
+  //     active = false;
+  //   };
+  // }, [session, sessionLoaded]);
+
   useEffect(() => {
-    if (!sessionLoaded) {
-      return;
+    async function loadSubjects() {
+      try {
+        const data = await getSubjects();
+        setSubjects(data ?? []);
+      } catch (error) {
+        console.error(error);
+      }
     }
 
-    let active = true;
-
-    void Promise.resolve(session ? fetchActiveRecallSheetCount() : 0)
-      .then((count) => {
-        if (active) {
-          setPublishedCount(count);
-        }
-      })
-      .catch((countError) => {
-        if (!active) {
-          return;
-        }
-
-        setError(
-          countError instanceof Error
-            ? countError.message
-            : "Unable to load published recall sheets.",
-        );
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [session, sessionLoaded]);
+    loadSubjects();
+  }, []);
 
   function markEditorChanged(nextSheet: RecallSheet) {
     setEditorSheet(nextSheet);
@@ -117,36 +154,65 @@ export function ActiveRecallGenerator() {
     window.setTimeout(() => setCopyState("idle"), 1800);
   }
 
-  function handleGeneratePrompt() {
-    const nextSubject = normalizeRecallText(subject);
-    const nextTopic = normalizeRecallText(topic);
-    const nextCount = normalizeCount(questionCount);
+  const selectedSubject = selection.subject;
 
-    if (!nextSubject || !nextTopic) {
-      setError(
-        "Enter both subject and topic before generating the recall prompt.",
+  const selectedTopic = selection.topic;
+
+  const selectedSubtopic = selection.subtopic;
+
+  async function handleGeneratePrompt() {
+    try {
+      let effectiveSubtopic = selectedSubtopic;
+
+      if (isCustomMicroTopic && microTopic.trim() && selectedTopic) {
+        effectiveSubtopic = await createOrGetMicroTopic(
+          selectedTopic.id,
+          microTopic,
+        );
+        setSelection((current) => ({
+          ...current,
+          subtopic: effectiveSubtopic,
+        }));
+      }
+
+      const nextSubject = selectedSubject?.name_en ?? "";
+
+      const nextTopic =
+        effectiveSubtopic?.name_en ?? selectedTopic?.name_en ?? "";
+
+      const nextCount = normalizeCount(questionCount);
+
+      if (!nextSubject || !nextTopic) {
+        setError(
+          "Enter both subject and topic before generating the recall prompt.",
+        );
+        setStatus(null);
+        return;
+      }
+
+      setQuestionCount(nextCount);
+
+      setGeneratedPrompt(
+        generateRecallPrompt(nextSubject, nextTopic, nextCount),
       );
-      setStatus(null);
-      return;
-    }
 
-    setSubject(nextSubject);
-    setTopic(nextTopic);
-    setQuestionCount(nextCount);
-    setGeneratedPrompt(
-      generateRecallPrompt(nextSubject, nextTopic, nextCount),
-    );
-    setError(null);
-    setStatus(
-      `Prompt generated for exactly ${nextCount} recall cards. Copy it, run it in AI, then validate the JSON into the editor.`,
-    );
+      setError(null);
+
+      setStatus(`Prompt generated for exactly ${nextCount} recall cards.`);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to create micro topic.",
+      );
+    }
   }
 
   function handleValidateJsonToEditor() {
     try {
       const parsed = parseRecallSheet(jsonInput);
       setEditorSheet(parsed);
-      setTopic(parsed.topic);
+      // setTopic(parsed.topic);
       setQuestionCount(parsed.questions.length);
       setPreviewSheet(null);
       setRevealedCards({});
@@ -171,8 +237,9 @@ export function ActiveRecallGenerator() {
   }
 
   function handleCreateManualSheet() {
-    const nextSubject = normalizeRecallText(subject);
-    const nextTopic = normalizeRecallText(topic);
+    const nextSubject = selectedSubject?.name_en ?? "";
+
+    const nextTopic = selectedSubtopic?.name_en ?? selectedTopic?.name_en ?? "";
     const nextCount = normalizeCount(questionCount);
 
     if (!nextSubject || !nextTopic) {
@@ -181,8 +248,8 @@ export function ActiveRecallGenerator() {
       return;
     }
 
-    setSubject(nextSubject);
-    setTopic(nextTopic);
+    // setSubject(nextSubject);
+    // setTopic(nextTopic);
     setQuestionCount(nextCount);
     setEditorSheet({
       topic: nextTopic,
@@ -198,7 +265,11 @@ export function ActiveRecallGenerator() {
 
   function handleAddCard() {
     const baseSheet = editorSheet ?? {
-      topic: normalizeRecallText(topic) || "Untitled Recall Sheet",
+      topic:
+        (selectedSubtopic?.name_en ??
+          selectedTopic?.name_en ??
+          "Untitled Recall Sheet") ||
+        "Untitled Recall Sheet",
       questions: [],
     };
 
@@ -269,7 +340,11 @@ export function ActiveRecallGenerator() {
     try {
       const cleanedSheet = cleanRecallSheetForPreview({
         ...editorSheet,
-        topic: normalizeRecallText(topic) || editorSheet.topic,
+        topic:
+          (selectedSubtopic?.name_en ??
+            selectedTopic?.name_en ??
+            editorSheet.topic) ||
+          editorSheet.topic,
       });
 
       setEditorSheet(cleanedSheet);
@@ -359,10 +434,31 @@ export function ActiveRecallGenerator() {
 
     try {
       setIsPublishing(true);
+
       await saveActiveRecallSheet({
-        subject: normalizeRecallText(subject) || "UPSC Recall",
-        topic: previewSheet.topic,
+        title:
+          sheetTitle ||
+          selectedSubtopic?.name_en ||
+          selectedTopic?.name_en ||
+          previewSheet.topic,
+
+        subject: selectedSubject?.name_en ?? "",
+
+        topic:
+          selectedTopic?.name_en ??
+          selectedSubtopic?.name_en ??
+          previewSheet.topic,
+
+        subjectId: selectedSubject?.id ?? null,
+
+        topicId: selectedTopic?.id ?? null,
+
+        microTopicId: selectedSubtopic?.id ?? null,
+
+        currentAffairsDate: null,
+
         prompt: generationMode === "ai" ? generatedPrompt : "",
+
         sheet: {
           topic: previewSheet.topic,
           questions: previewSheet.questions.map((question) => ({
@@ -372,6 +468,7 @@ export function ActiveRecallGenerator() {
           })),
         },
       });
+
       setPublishedCount((current) => current + 1);
       setStatus(`Published "${previewSheet.topic}" to the backend.`);
       setError(null);
@@ -393,6 +490,56 @@ export function ActiveRecallGenerator() {
         Loading active recall workspace...
       </section>
     );
+  }
+
+  async function handleSubjectSelect(subjectId: string) {
+    const subject = subjects.find((s) => s.id === subjectId) ?? null;
+
+    setSelection({
+      subject,
+      topic: null,
+      subtopic: null,
+    });
+
+    setSubtopics([]);
+
+    if (!subject) {
+      setTopics([]);
+      return;
+    }
+
+    const data = await getTopicsBySubject(subject.id);
+
+    setTopics(data as SyllabusItem[]);
+  }
+
+  async function handleTopicSelect(topicId: string) {
+    const topic = topics.find((t) => t.id === topicId) ?? null;
+    setSheetTitle(topic?.name_en ?? "");
+    setSelection((current) => ({
+      ...current,
+      topic,
+      subtopic: null,
+    }));
+    setMicroTopic("");
+    setIsCustomMicroTopic(false);
+    if (!topic) {
+      setSubtopics([]);
+      return;
+    }
+
+    const relations = await getTopicRelations(topic.id);
+
+    setSubtopics(relations.map((x: any) => x.topics));
+  }
+
+  function handleSubtopicSelect(subtopicId: string) {
+    const subtopic = subtopics.find((s) => s.id === subtopicId) ?? null;
+    setSheetTitle(subtopic?.name_en ?? "");
+    setSelection((current) => ({
+      ...current,
+      subtopic,
+    }));
   }
 
   if (viewMode === "preview" && previewSheet) {
@@ -483,7 +630,7 @@ export function ActiveRecallGenerator() {
           <div className="mb-6 rounded-[24px] border border-black/10 bg-white/90 px-5 py-5 shadow-[0_16px_36px_rgba(15,23,42,0.06)] print:mb-4 print:break-inside-avoid print:rounded-[18px] print:border print:px-4 print:py-4 print:shadow-none">
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full bg-amber-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-950">
-                {normalizeRecallText(subject) || "UPSC Recall"}
+                {selectedSubject?.name_en ?? "UPSC Recall"}
               </span>
               <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
                 {previewSheet.questions.length} Cards
@@ -530,8 +677,7 @@ export function ActiveRecallGenerator() {
               Create Active Recall Sheets
             </p>
             <h2 className="mt-4 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
-              Build AI-assisted or manual recall cards in one editable
-              workflow.
+              Build AI-assisted or manual recall cards in one editable workflow.
             </h2>
             <p className="mt-4 max-w-xl text-sm leading-7 text-slate-600 sm:text-base">
               Generate a prompt, validate JSON into the editor, or pre-create
@@ -568,18 +714,33 @@ export function ActiveRecallGenerator() {
         {generationMode === "ai" ? (
           <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <AiPromptSection
-              subject={subject}
-              topic={topic}
+              sheetTitle={sheetTitle}
+              onSheetTitleChange={setSheetTitle}
+              subjects={subjects}
+              topics={topics}
+              subtopics={subtopics}
+              selectedSubject={selectedSubject}
+              selectedTopic={selectedTopic}
+              selectedSubtopic={selectedSubtopic}
               questionCount={questionCount}
               generatedPrompt={generatedPrompt}
               copyState={copyState}
-              onSubjectChange={setSubject}
-              onTopicChange={setTopic}
+              microTopic={microTopic}
+              onMicroTopicChange={setMicroTopic}
+              isCustomMicroTopic={isCustomMicroTopic}
+              onCustomMicroTopicChange={setIsCustomMicroTopic}
+              onSubjectChange={handleSubjectSelect}
+              onTopicChange={handleTopicSelect}
+              onSubtopicChange={handleSubtopicSelect}
               onQuestionCountChange={(value) =>
                 setQuestionCount(normalizeCount(value))
               }
               onGeneratePrompt={handleGeneratePrompt}
               onCopyPrompt={() => void handleCopyPrompt()}
+              recallProfile={recallProfile}
+              customInstruction={customInstruction}
+              onRecallProfileChange={setRecallProfile}
+              onCustomInstructionChange={setCustomInstruction}
             />
             <div className="space-y-5">
               <JsonInputSection
@@ -600,7 +761,7 @@ export function ActiveRecallGenerator() {
           </div>
         ) : (
           <div className="space-y-5">
-            <ManualSetupSection
+            {/* <ManualSetupSection
               subject={subject}
               topic={topic}
               cardCount={questionCount}
@@ -610,7 +771,7 @@ export function ActiveRecallGenerator() {
                 setQuestionCount(normalizeCount(value))
               }
               onCreateSheet={handleCreateManualSheet}
-            />
+            /> */}
             <RecallEditor
               sheet={editorSheet}
               isDirty={isDirty}

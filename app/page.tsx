@@ -4,12 +4,15 @@ import { Hero } from "@/components/hero";
 import { ServerQuizGrid } from "@/components/server-quiz-grid";
 import { StatsStrip } from "@/components/stats-strip";
 
+import { AdminDashboardAccess } from "@/components/admin-dashboard-access";
+
 export default function Home() {
   return (
     <AppShell>
       <Hero />
       <StatsStrip />
-      <section className="mt-8">
+      <AdminDashboardAccess />
+      <section className="mt-12">
         <div className="mb-5 flex items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Available Sets</p>

@@ -23,36 +23,133 @@ export function createEmptyRecallCards(count: number) {
 export function generateRecallPrompt(
   subject: string,
   topic: string,
+  microTopic: string,
   questionCount: number,
+  profilePrompt: string
 ) {
-  return `You are a UPSC Prelims expert.
+  return `
+You are an expert educator, senior exam paper setter, previous-year-question (PYQ) analyst, and memory learning specialist.
 
-Create a HIGH-YIELD Active Recall Sheet for:
+You will receive study material from the user.
 
-Subject: ${subject}
-Topic: ${topic}
+Your responsibility is NOT to summarize it.
 
-Generate exactly ${questionCount} high-yield recall questions.
+Instead, carefully analyze the provided content and convert it into HIGH-YIELD Active Recall revision cards that maximize long-term retention and exam performance.
 
-Rules:
-- Only include exam-relevant questions
-- Focus on traps, acts, bodies, authority confusion
-- Include at least 1 statement-based question
-- Preserve useful numbering inside questions or answers when needed
-- Answers must be crisp but may use multiple lines where revision clarity requires it
-- No explanations outside the answer field
+## Exam Profile
 
-Return ONLY JSON:
+${profilePrompt}
+
+## Subject
+
+${subject}
+
+## Topic
+
+${topic}
+
+## Micro Topic
+
+${microTopic}
+
+## Instructions
+
+The user will provide study material after this prompt.
+
+Generate exactly ${questionCount} unique Active Recall questions ONLY from the provided material.
+
+Do NOT introduce information that is not supported by the provided content.
+
+However, use your expertise as an examiner to decide:
+
+• Which concepts are most important.
+• Which facts are most likely to appear in examinations.
+• Which information is commonly asked in Previous Year Questions (PYQs).
+• Which concepts students usually forget.
+• Which facts are commonly confused.
+• Which concepts deserve multiple recall questions.
+
+Prioritize high-yield concepts over low-value details.
+
+## Question Design
+
+Convert the material into recall questions instead of summaries.
+
+Generate different question styles whenever appropriate:
+
+• What
+• Why
+• How
+• Difference Between
+• Compare
+• List
+• Sequence
+• Match
+• Statement Based
+• True/False Recall
+• Fill the Missing Concept
+• Process Based
+• Example Based
+
+Whenever present in the material, create questions for:
+
+• Definitions
+• Concepts
+• Processes
+• Formulae
+• Examples
+• Classifications
+• Advantages
+• Disadvantages
+• Causes
+• Effects
+• Applications
+• Exceptions
+• Limitations
+• Articles
+• Acts
+• Committees
+• Reports
+• Government Schemes
+• Constitutional Bodies
+• Important Years
+• Important Dates
+• Important Personalities
+• Abbreviations
+• Full Forms
+• Tables
+• Flowcharts
+• Diagrams (convert into text-based recall)
+• Comparisons
+
+## Quality Rules
+
+• One concept per question.
+• Avoid duplicate or overlapping questions.
+• Break long explanations into multiple recall cards.
+• Cover the entire provided content.
+• Include small but exam-important facts.
+• Prioritize PYQ-oriented information.
+• Preserve numbering wherever useful.
+• Answers should be crisp, self-contained, and revision-friendly.
+• Use bullet points inside answers whenever helpful.
+• Do not explain beyond what is present in the provided material.
+• Do not mention information that is missing from the notes.
+• Do not write markdown.
+• Return ONLY valid JSON.
+
+Expected Output:
 
 {
-  "topic": "${topic}",
+  "topic": "${microTopic || topic}",
   "questions": [
     {
       "question": "",
       "answer": ""
     }
   ]
-}`;
+}
+`;
 }
 
 export function parseRecallSheet(input: string) {

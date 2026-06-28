@@ -287,8 +287,17 @@ function toPayload(sheet: StoredRecallSheet) {
 }
 
 export async function saveActiveRecallSheet(input: {
+  title: string;
+
   subject: string;
   topic: string;
+
+  subjectId?: string | null;
+  topicId?: string | null;
+  microTopicId?: string | null;
+
+  currentAffairsDate?: string | null;
+
   prompt: string;
   visibility?: RecallVisibility;
   sheet: StoredRecallSheet;
@@ -302,8 +311,13 @@ export async function saveActiveRecallSheet(input: {
     .insert({
       user_id: userId,
       owner_id: userId,
+      title: input.title,
       subject: input.subject,
       topic: input.topic,
+      subject_id: input.subjectId ?? null,
+      topic_id: input.topicId ?? null,
+      micro_topic_id: input.microTopicId ?? null,
+      current_affairs_date: input.currentAffairsDate ?? null,
       prompt: input.prompt,
       visibility: input.visibility ?? "private",
       payload,

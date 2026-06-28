@@ -13,6 +13,8 @@ const segmentLabels: Record<string, string> = {
   results: "Results",
   custom: "Custom Quiz",
   "custom-results": "Custom Results",
+  admin: "Admin",
+  syllabus: "Syllabus Management",
 };
 
 function titleizeSegment(segment: string) {

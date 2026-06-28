@@ -7,10 +7,10 @@ import { MobileTabBar } from "@/components/mobile-tab-bar";
 const navItems = [
   { href: "/", label: "Home" },
   { href: "/subjects", label: "Subjects" },
-  { href: "/active-recall", label: "Practice Active Recall" },
+  { href: "/active-recall", label: "Active Recall" },
   { href: "/studio", label: "AI Studio" },
   { href: "/revision", label: "Revision" },
-  { href: "/login", label: "Account" },
+  { href: "/admin/syllabus", label: "Syllabus Admin" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

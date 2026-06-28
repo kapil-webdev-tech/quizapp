@@ -535,3 +535,114 @@ create policy "Admins can delete all studio drafts"
 on public.studio_drafts
 for delete
 using (public.is_admin());
+
+-- =====================================================
+-- SYLLABUS MANAGEMENT
+-- =====================================================
+create table if not exists public.exams (
+  id uuid primary key default gen_random_uuid(),
+
+  name_en text not null,
+  name_hi text,
+
+  slug text not null unique,
+
+  description_en text,
+  description_hi text,
+
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists exams_name_en_unique
+on public.exams (
+  lower(trim(name_en))
+);
+
+create table if not exists public.subjects (
+  id uuid primary key default gen_random_uuid(),
+
+  name_en text not null,
+  name_hi text,
+
+  slug text not null unique,
+
+  description_en text,
+  description_hi text,
+
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists subjects_name_en_unique
+on public.subjects (
+  lower(trim(name_en))
+);
+create table if not exists public.topics (
+  id uuid primary key default gen_random_uuid(),
+
+  name_en text not null,
+  name_hi text,
+
+  slug text not null unique,
+
+  description_en text,
+  description_hi text,
+
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists topics_name_en_unique
+on public.topics (
+  lower(trim(name_en))
+);
+
+create table if not exists public.exam_subjects (
+  exam_id uuid not null
+    references public.exams(id)
+    on delete cascade,
+
+  subject_id uuid not null
+    references public.subjects(id)
+    on delete cascade,
+
+  primary key (
+    exam_id,
+    subject_id
+  )
+);
+
+create table if not exists public.subject_topics (
+  subject_id uuid not null
+    references public.subjects(id)
+    on delete cascade,
+
+  topic_id uuid not null
+    references public.topics(id)
+    on delete cascade,
+
+  primary key (
+    subject_id,
+    topic_id
+  )
+);
+
+create table if not exists public.topic_relations (
+  parent_topic_id uuid not null
+    references public.topics(id)
+    on delete cascade,
+
+  child_topic_id uuid not null
+    references public.topics(id)
+    on delete cascade,
+
+  relation_type text not null default 'contains',
+
+  primary key (
+    parent_topic_id,
+    child_topic_id,
+    relation_type
+  ),
+
+  check (
+    parent_topic_id <> child_topic_id
+  )
+);

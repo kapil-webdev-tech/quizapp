@@ -8,7 +8,8 @@ type ButtonVariant =
   | "success"
   | "warning"
   | "danger"
-  | "icon";
+  | "icon"
+  | "outline";
 
 type ButtonSize = "sm" | "md" | "lg" | "icon";
 
@@ -19,20 +20,16 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary:
-    "bg-slate-900 text-white hover:-translate-y-0.5 hover:bg-slate-800",
+  primary: "bg-slate-900 text-white hover:-translate-y-0.5 hover:bg-slate-800",
   secondary:
     "border border-black/10 bg-white text-slate-800 hover:-translate-y-0.5 hover:bg-stone-100",
-  ghost:
-    "bg-transparent text-slate-700 hover:text-slate-950",
-  success:
-    "bg-emerald-500 text-white hover:bg-emerald-600",
+  ghost: "bg-transparent text-slate-700 hover:text-slate-950",
+  success: "bg-emerald-500 text-white hover:bg-emerald-600",
   warning:
     "border border-yellow-200 bg-yellow-100 text-yellow-800 hover:bg-yellow-200",
-  danger:
-    "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
-  icon:
-    "border border-black/10 bg-white text-slate-500 hover:bg-stone-100 hover:text-slate-700",
+  danger: "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
+  outline: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+  icon: "border border-black/10 bg-white text-slate-500 hover:bg-stone-100 hover:text-slate-700",
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
