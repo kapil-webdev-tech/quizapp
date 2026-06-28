@@ -18,6 +18,10 @@ export function ActiveRecallSheetList() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    console.log("effect", {
+      sessionLoaded,
+      hasSession: !!session,
+    });
     if (!sessionLoaded || !session) {
       return;
     }

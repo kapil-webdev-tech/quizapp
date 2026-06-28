@@ -38,11 +38,12 @@ export type ActiveRecallSheetRecord = {
   ownerId: string;
   subject: string;
   topic: string;
-  prompt: string;
   visibility: RecallVisibility;
-  sheet: StoredRecallSheet;
+  sheet?: StoredRecallSheet;
   createdAt: string;
   updatedAt: string;
+  title?: string;
+  questionCount: number;
 };
 
 type RecallCardRow = {
@@ -54,17 +55,27 @@ type RecallCardRow = {
 
 type RecallSheetRow = {
   id: string;
+
   owner_id?: string | null;
   user_id?: string | null;
+
+  title?: string | null;
+
   subject: string;
   topic: string;
-  prompt: string;
+
+  subject_id?: string | null;
+  topic_id?: string | null;
+  micro_topic_id?: string | null;
+
+  current_affairs_date?: string | null;
+
   visibility?: RecallVisibility | null;
-  payload?: unknown;
+  question_count: number;
+
   created_at: string;
   updated_at: string;
 };
-
 function buildRecallSaveErrorMessage(error: PostgrestError) {
   if (error.code === "42P01") {
     return "The normalized active recall tables are missing in Supabase. Apply supabase/schema.sql first.";
@@ -98,68 +109,67 @@ function mapCardRows(cards: RecallCardRow[] | null | undefined) {
     }));
 }
 
-function mapLegacyPayload(payload: unknown) {
-  const sheet = payload as Partial<{
-    topic: unknown;
-    questions: Array<Partial<StoredRecallQuestion>>;
-  }>;
-
-  const questions = Array.isArray(sheet.questions) ? sheet.questions : [];
-
-  if (questions.some((question) => typeof question.id !== "string")) {
-    throw new Error(
-      "This saved sheet still uses legacy JSON cards without permanent IDs. Apply supabase/schema.sql to migrate payload.questions into active_recall_cards before managing cards.",
-    );
-  }
-
+function mapRecallSheetMetadata(row: RecallSheetRow) {
   return {
-    topic: typeof sheet.topic === "string" ? sheet.topic : "",
-    questions: questions.map((question, index) => ({
-      id: question.id as string,
-      question: typeof question.question === "string" ? question.question : "",
-      answer: typeof question.answer === "string" ? question.answer : "",
-      orderIndex: index,
-    })),
-  } satisfies StoredRecallSheet;
+    id: row.id,
+
+    ownerId: row.owner_id ?? row.user_id ?? "",
+
+    title: row.title ?? "",
+
+    subject: row.subject,
+    topic: row.topic,
+
+    subjectId: row.subject_id ?? null,
+    topicId: row.topic_id ?? null,
+    microTopicId: row.micro_topic_id ?? null,
+
+    currentAffairsDate: row.current_affairs_date ?? null,
+
+    questionCount: row.question_count,
+    visibility: row.visibility ?? "private",
+
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function mapRecallSheetRow(
   row: RecallSheetRow,
   cardsBySheetId: Record<string, RecallCardRow[]> = {},
 ) {
-  const cards = mapCardRows(cardsBySheetId[row.id]);
-  const sheet =
-    cards.length > 0
-      ? {
-          topic: row.topic,
-          questions: cards,
-        }
-      : mapLegacyPayload(row.payload);
-
   return {
-    id: row.id,
-    ownerId: row.owner_id ?? row.user_id ?? "",
-    subject: row.subject,
-    topic: row.topic,
-    prompt: row.prompt,
-    visibility: row.visibility ?? "private",
-    sheet,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  } satisfies ActiveRecallSheetRecord;
+    ...mapRecallSheetMetadata(row),
+
+    sheet: {
+      topic: row.topic,
+      questions: mapCardRows(cardsBySheetId[row.id]),
+    },
+  };
 }
 
 const sheetSelect = `
-  id,
-  owner_id,
-  user_id,
-  subject,
-  topic,
-  prompt,
-  visibility,
-  payload,
-  created_at,
-  updated_at
+id,
+owner_id,
+user_id,
+
+title,
+
+subject,
+topic,
+
+subject_id,
+topic_id,
+micro_topic_id,
+
+current_affairs_date,
+
+question_count,
+
+visibility,
+
+created_at,
+updated_at
 `;
 
 async function fetchCardsBySheetId(sheetIds: string[]) {
@@ -213,6 +223,7 @@ export async function fetchActiveRecallSheetCount() {
 }
 
 export async function fetchActiveRecallSheets() {
+  console.count("fetchActiveRecallSheets");
   const supabase = requireSupabaseBrowserClient();
 
   const userId = await requireRecallUserId();
@@ -225,11 +236,9 @@ export async function fetchActiveRecallSheets() {
   if (error) {
     throw new Error(buildRecallSaveErrorMessage(error));
   }
-
   const rows = (data ?? []) as RecallSheetRow[];
-  const cardsBySheetId = await fetchCardsBySheetId(rows.map((row) => row.id));
 
-  return rows.map((row) => mapRecallSheetRow(row, cardsBySheetId));
+  return rows.map(mapRecallSheetMetadata);
 }
 
 export async function fetchPublicActiveRecallSheets() {
@@ -246,9 +255,7 @@ export async function fetchPublicActiveRecallSheets() {
   }
 
   const rows = (data ?? []) as RecallSheetRow[];
-  const cardsBySheetId = await fetchCardsBySheetId(rows.map((row) => row.id));
-
-  return rows.map((row) => mapRecallSheetRow(row, cardsBySheetId));
+  return rows.map(mapRecallSheetMetadata);
 }
 
 export async function fetchActiveRecallSheet(id: string) {
@@ -274,17 +281,7 @@ export async function fetchActiveRecallSheet(id: string) {
   return mapRecallSheetRow(row, cardsBySheetId);
 }
 
-function toPayload(sheet: StoredRecallSheet) {
-  return {
-    topic: sheet.topic,
-    questions: sheet.questions.map((question, index) => ({
-      id: question.id,
-      question: question.question,
-      answer: question.answer,
-      orderIndex: question.orderIndex ?? index,
-    })),
-  };
-}
+
 
 export async function saveActiveRecallSheet(input: {
   title: string;
@@ -298,14 +295,12 @@ export async function saveActiveRecallSheet(input: {
 
   currentAffairsDate?: string | null;
 
-  prompt: string;
   visibility?: RecallVisibility;
   sheet: StoredRecallSheet;
 }) {
   const supabase = requireSupabaseBrowserClient();
 
   const userId = await requireRecallUserId();
-  const payload = toPayload(input.sheet);
   const { data, error } = await supabase
     .from("active_recall_sheets")
     .insert({
@@ -318,9 +313,8 @@ export async function saveActiveRecallSheet(input: {
       topic_id: input.topicId ?? null,
       micro_topic_id: input.microTopicId ?? null,
       current_affairs_date: input.currentAffairsDate ?? null,
-      prompt: input.prompt,
       visibility: input.visibility ?? "private",
-      payload,
+      question_count: input.sheet.questions.length,
       updated_at: new Date().toISOString(),
     })
     .select("id")
@@ -352,7 +346,6 @@ export async function updateActiveRecallSheet(
   input: {
     subject: string;
     topic: string;
-    prompt: string;
     visibility?: RecallVisibility;
     sheet: StoredRecallSheet;
   },
@@ -360,16 +353,14 @@ export async function updateActiveRecallSheet(
   const supabase = requireSupabaseBrowserClient();
 
   const userId = await requireRecallUserId();
-  const payload = toPayload(input.sheet);
   const { error } = await supabase
     .from("active_recall_sheets")
     .update({
       subject: input.subject,
       topic: input.topic,
-      prompt: input.prompt,
       visibility: input.visibility,
-      payload,
       updated_at: new Date().toISOString(),
+      question_count: input.sheet.questions.length,
     })
     .eq("id", id)
     .eq("owner_id", userId);

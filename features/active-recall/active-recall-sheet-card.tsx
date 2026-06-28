@@ -8,9 +8,7 @@ type ActiveRecallSheetCardProps = {
   sheet: ActiveRecallSheetRecord;
 };
 
-export function ActiveRecallSheetCard({
-  sheet,
-}: ActiveRecallSheetCardProps) {
+export function ActiveRecallSheetCard({ sheet }: ActiveRecallSheetCardProps) {
   return (
     <article className="rounded-[28px] border border-black/10 bg-white/85 p-6 shadow-[0_14px_50px_rgba(108,78,26,0.08)]">
       <div className="flex flex-wrap items-center gap-2">
@@ -19,7 +17,7 @@ export function ActiveRecallSheetCard({
         </span>
 
         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
-          {sheet.sheet.questions.length} Cards
+          {sheet.questionCount} Cards
         </span>
 
         <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">
@@ -28,7 +26,7 @@ export function ActiveRecallSheetCard({
       </div>
 
       <h2 className="mt-4 text-2xl font-semibold text-slate-900">
-        {sheet.topic}
+        {sheet?.title || sheet.topic}
       </h2>
 
       <p className="mt-3 text-sm leading-7 text-slate-600">

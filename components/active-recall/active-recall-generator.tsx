@@ -27,7 +27,10 @@ import {
   getTopicsBySubject,
 } from "@/lib/syllabus/topics";
 import { getSyllabusDebugData } from "@/lib/syllabus/explorer";
-import { getTopicRelations, getTopicsForSubject } from "@/lib/syllabus/mappings";
+import {
+  getTopicRelations,
+  getTopicsForSubject,
+} from "@/lib/syllabus/mappings";
 import { RECALL_PROFILES } from "@/lib/active-recall/recall-profiles";
 
 type SyllabusItem = {
@@ -467,8 +470,6 @@ export function ActiveRecallGenerator() {
         microTopicId: selectedSubtopic?.id ?? null,
 
         currentAffairsDate: null,
-
-        prompt: generationMode === "ai" ? generatedPrompt : "",
 
         sheet: {
           topic: previewSheet.topic,

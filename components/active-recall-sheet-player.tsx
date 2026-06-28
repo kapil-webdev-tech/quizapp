@@ -33,7 +33,11 @@ type ViewerQuestion = {
   answer: string;
 };
 
-function toViewerQuestions(sheet: ActiveRecallSheetRecord["sheet"]) {
+function toViewerQuestions(
+  sheet: ActiveRecallSheetRecord["sheet"] | undefined,
+) {
+  if (!sheet) return [];
+
   return sheet.questions.map((question) => ({
     id: question.id,
     question: question.question,
@@ -121,11 +125,13 @@ function SavedRecallCard({
 }) {
   const questionWrapClass = cn(
     "relative transition-all duration-300",
-    question.question.length > 250 && "max-h-[500px] overflow-y-auto pr-2 custom-scrollbar"
+    question.question.length > 250 &&
+      "max-h-[500px] overflow-y-auto pr-2 custom-scrollbar",
   );
   const answerWrapClass = cn(
     "relative transition-all duration-300",
-    question.answer.length > 250 && "max-h-[500px] overflow-y-auto pr-2 custom-scrollbar"
+    question.answer.length > 250 &&
+      "max-h-[500px] overflow-y-auto pr-2 custom-scrollbar",
   );
   const accentColor = getRecallStatusAccent(progress?.recallStatus);
   if (isEditing) {
@@ -319,7 +325,7 @@ export function ActiveRecallSheetPlayer({
         }
 
         const nextQuestions = nextRecord
-          ? toViewerQuestions(nextRecord.sheet)
+          ? toViewerQuestions(nextRecord?.sheet)
           : [];
 
         setRecord(nextRecord);
@@ -432,7 +438,6 @@ export function ActiveRecallSheetPlayer({
       await updateActiveRecallSheet(record.id, {
         subject: record.subject,
         topic: record.topic,
-        prompt: record.prompt,
         visibility: record.visibility,
         sheet: nextSheet,
       });
@@ -710,7 +715,6 @@ export function ActiveRecallSheetPlayer({
       </div>
     );
   }
-
   return (
     <section className="min-h-[calc(100vh-7rem)] print:min-h-0">
       <StickyPageHeader
@@ -783,9 +787,7 @@ export function ActiveRecallSheetPlayer({
                 disabled={isSaving}
                 className="rounded-full font-bold border-emerald-200 bg-emerald-50 text-emerald-800 transition hover:bg-emerald-100 whitespace-nowrap px-3 sm:px-4"
               >
-                {record.visibility === "public"
-                  ? "Make Private"
-                  : "Publish"}
+                {record.visibility === "public" ? "Make Private" : "Publish"}
               </Button>
             )}
 
@@ -819,7 +821,7 @@ export function ActiveRecallSheetPlayer({
         <div className="relative mb-8 overflow-hidden rounded-[32px] border border-black/5 bg-white p-6 shadow-[0_32px_64px_-16px_rgba(15,23,42,0.08)] print:mb-4 print:break-inside-avoid print:rounded-[18px] print:border print:px-4 print:py-4 print:shadow-none sm:p-8">
           <div className="absolute top-0 right-0 -mr-20 -mt-20 h-64 w-64 rounded-full bg-amber-500/5 blur-3xl" />
           <div className="absolute bottom-0 left-0 -ml-20 -mb-20 h-64 w-64 rounded-full bg-blue-500/5 blur-3xl" />
-          
+
           <div className="relative">
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">
@@ -830,10 +832,10 @@ export function ActiveRecallSheetPlayer({
               </span>
             </div>
             <h1 className="mt-6 text-4xl font-extrabold text-slate-950 tracking-tight sm:text-5xl print:text-2xl">
-              {record.topic}
+              {record.title}
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-500 print:hidden">
-              Master your knowledge with active recall. Owners can manage cards, 
+              Master your knowledge with active recall. Owners can manage cards,
               while everyone can track memory progress per card.
             </p>
           </div>
@@ -868,16 +870,16 @@ export function ActiveRecallSheetPlayer({
           ))}
         </div>
       </div>
-        <ConfirmationModal
-          isOpen={deleteSheetOpen}
-          onClose={() => setDeleteSheetOpen(false)}
-          onConfirm={() => void handleDeleteSheet()}
-          title="Delete Recall Sheet?"
-          description="This will permanently delete this sheet and all its cards. This action cannot be undone."
-          confirmLabel="Delete Sheet"
-          cancelLabel="Keep Sheet"
-          isLoading={isSaving}
-        />
+      <ConfirmationModal
+        isOpen={deleteSheetOpen}
+        onClose={() => setDeleteSheetOpen(false)}
+        onConfirm={() => void handleDeleteSheet()}
+        title="Delete Recall Sheet?"
+        description="This will permanently delete this sheet and all its cards. This action cannot be undone."
+        confirmLabel="Delete Sheet"
+        cancelLabel="Keep Sheet"
+        isLoading={isSaving}
+      />
       <ConfirmationModal
         isOpen={Boolean(deleteCardId)}
         onClose={() => setDeleteCardId(null)}
